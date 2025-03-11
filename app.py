@@ -3,13 +3,14 @@ from flask import Flask, render_template, request, Response, jsonify
 import threading, queue, time
 import os
 from dotenv import load_dotenv
-import openai
+from openai import OpenAI
 
 # .env-Datei laden
 load_dotenv()
 
 # API-Key aus der Umgebung laden
 openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI()
 
 app = Flask(__name__)
 
@@ -19,12 +20,15 @@ final_results = None
 processing_done = False
 
 def log_message(message):
-    """Schreibt eine Nachricht in die globale Fortschritts-Queue."""
-    print(message)  # Für die Konsole (optional)
-    progress_queue.put(message)
+    """Schreibt eine Nachricht in die globale Fortschritts-Queue.
+       Lange Nachrichten werden zeilenweise hinzugefügt."""
+    print(message)  # Optional: Ausgabe in der Konsole
+    # Zerlege die Nachricht in einzelne Zeilen und füge diese einzeln ein
+    for line in message.splitlines():
+        progress_queue.put(line)
 
-def call_chat_completion(messages, model="gpt-4o-mini", temperature=0.7, max_completion_tokens=150):
-    response = openai.ChatCompletion.create(
+def call_chat_completion(messages, model="gpt-4o-mini", temperature=0.7, max_completion_tokens=5000):
+    response = client.chat.completions.create(
         model=model,
         messages=messages,
         temperature=temperature,
@@ -32,7 +36,7 @@ def call_chat_completion(messages, model="gpt-4o-mini", temperature=0.7, max_com
     )
     return response.choices[0].message.content.strip()
 
-# Agenten-Funktionen (wie zuvor definiert)
+# Agenten-Funktionen: Jede Funktion loggt ihr Ergebnis, damit es per SSE an die Webseite gesendet wird.
 def planner_agent(input_data):
     prompt = (
         "Du bist ein philosophischer Forschungsassistent. "
@@ -44,7 +48,7 @@ def planner_agent(input_data):
         {"role": "user", "content": prompt}
     ]
     result = call_chat_completion(messages)
-    log_message("Planner Agent: Fragestellungen extrahiert.")
+    log_message(f"Planner Agent: Fragestellungen extrahiert.\nErgebnis:\n{result}")
     questions = [line.strip("- ").strip() for line in result.splitlines() if line.strip()]
     return questions
 
@@ -58,7 +62,7 @@ def historical_agent(question):
         {"role": "user", "content": prompt}
     ]
     result = call_chat_completion(messages)
-    log_message("Historical Agent: Klassische Ansätze extrahiert.")
+    log_message(f"Historical Agent: Klassische Ansätze extrahiert.\nErgebnis:\n{result}")
     return result
 
 def modernity_agent(question):
@@ -71,7 +75,7 @@ def modernity_agent(question):
         {"role": "user", "content": prompt}
     ]
     result = call_chat_completion(messages)
-    log_message("Modernity Agent: Moderne Diskurse extrahiert.")
+    log_message(f"Modernity Agent: Moderne Diskurse extrahiert.\nErgebnis:\n{result}")
     return result
 
 def comparison_agent(classical_info, modern_info):
@@ -86,7 +90,7 @@ def comparison_agent(classical_info, modern_info):
         {"role": "user", "content": prompt}
     ]
     result = call_chat_completion(messages)
-    log_message("Comparison Agent: Ansätze verglichen.")
+    log_message(f"Comparison Agent: Ansätze verglichen.\nErgebnis:\n{result}")
     return result
 
 def synthesis_agent(comparison_info):
@@ -100,7 +104,7 @@ def synthesis_agent(comparison_info):
         {"role": "user", "content": prompt}
     ]
     result = call_chat_completion(messages)
-    log_message("Synthesis Agent: Synthese erstellt.")
+    log_message(f"Synthesis Agent: Synthese erstellt.\nErgebnis:\n{result}")
     return result
 
 def evaluation_agent(synthesis):
@@ -114,7 +118,7 @@ def evaluation_agent(synthesis):
         {"role": "user", "content": prompt}
     ]
     result = call_chat_completion(messages)
-    log_message("Evaluation Agent: Synthese bewertet.")
+    log_message(f"Evaluation Agent: Synthese bewertet.\nErgebnis:\n{result}")
     return "yes" in result.lower()
 
 def detail_analysis_agent(question, current_synthesis):
@@ -128,23 +132,24 @@ def detail_analysis_agent(question, current_synthesis):
         {"role": "user", "content": prompt}
     ]
     result = call_chat_completion(messages)
-    log_message("Detail Analysis Agent: Synthese verfeinert.")
+    log_message(f"Detail Analysis Agent: Synthese verfeinert.\nErgebnis:\n{result}")
     return result
 
 def report_aggregator(synthesis):
     prompt = (
-        "Erstelle einen strukturierten Bericht in JSON-Format, der die folgenden Elemente enthält:\n"
-        "- summary: Eine kurze Zusammenfassung der Synthese\n"
-        "- detailed_argument: Die ausführliche Darstellung des Arguments\n"
-        "- references: Hinweise auf verwendete Quellen oder Ansätze\n\n"
+        "Erstelle einen ausführlichen, gut lesbaren Bericht in reinem Textformat, "
+        "der folgende Elemente enthält:\n"
+        "- Eine kurze Zusammenfassung der Synthese\n"
+        "- Eine ausführliche Darstellung der Argumentation\n"
+        "- Hinweise auf verwendete Quellen oder Ansätze, falls vorhanden\n\n"
         "Nutze die folgende Synthese als Grundlage:\n" + synthesis
     )
     messages = [
-        {"role": "system", "content": "Du generierst einen strukturierten, finalen Bericht."},
+        {"role": "system", "content": "Du generierst einen finalen, gut lesbaren Bericht in reinem Textformat."},
         {"role": "user", "content": prompt}
     ]
-    result = call_chat_completion(messages)
-    log_message("Report Aggregator: Bericht generiert.")
+    result = call_chat_completion(messages, max_completion_tokens=300)
+    log_message(f"Report Aggregator: Bericht generiert.\nErgebnis:\n{result}")
     return result
 
 def feedback_agent(report):
@@ -158,11 +163,11 @@ def feedback_agent(report):
         {"role": "user", "content": prompt}
     ]
     result = call_chat_completion(messages)
-    log_message("Feedback Agent: Bericht bewertet.")
+    log_message(f"Feedback Agent: Bericht bewertet.\nErgebnis:\n{result}")
     return "yes" in result.lower()
 
 def check_time(start_time, max_time):
-    """Überprüft, wie viel Zeit noch übrig ist, und gibt Warnungen aus."""
+    """Überprüft die verbleibende Zeit und gibt Warnungen aus."""
     elapsed = time.time() - start_time
     remaining = max_time - elapsed
     if remaining <= 10:
@@ -173,7 +178,7 @@ def check_time(start_time, max_time):
     return True
 
 def run_agent_system(input_data, max_time):
-    """Führt das Agentensystem aus, unter Berücksichtigung eines Zeitlimits."""
+    """Führt das Agentensystem mit Zeitlimit aus und speichert die finalen Ergebnisse."""
     global final_results, processing_done
     start_time = time.time()
     final_reports = []
@@ -198,8 +203,6 @@ def run_agent_system(input_data, max_time):
             break
 
         attempt = 1
-        # Evaluationsschleife: Wenn Synthese unzureichend ist oder Zeit fast abgelaufen ist,
-        # dann wird verfeinert – falls die Zeit überschritten wird, wird abgebrochen.
         while not evaluation_agent(synthesis):
             if not check_time(start_time, max_time):
                 log_message("Zeitlimit erreicht während Detailanalyse, fahre mit aktueller Synthese fort.")
@@ -208,10 +211,10 @@ def run_agent_system(input_data, max_time):
             synthesis = detail_analysis_agent(question, synthesis)
             attempt += 1
             time.sleep(1)
-
+        
         report = report_aggregator(synthesis)
         if not check_time(start_time, max_time):
-            log_message("Zeitlimit erreicht vor Feedbackschleife, fahre mit aktuellem Bericht fort.")
+            log_message("Zeitlimit erreicht vor Feedbackschleife, verwende aktuellen Bericht.")
         feedback_attempt = 1
         while not feedback_agent(report):
             if not check_time(start_time, max_time):
@@ -229,29 +232,26 @@ def run_agent_system(input_data, max_time):
     processing_done = True
     log_message("Agentensystem abgeschlossen.")
 
-# Hintergrundthread-Funktion, die das Agentensystem ausführt
+# Hintergrundthread startet das Agentensystem
 def background_process(input_data, max_time):
     run_agent_system(input_data, max_time)
 
-# Route für die Hauptseite
 @app.route("/", methods=["GET", "POST"])
 def index():
     global processing_done, final_results, progress_queue
     if request.method == "POST":
         input_text = request.form.get("input_text")
-        max_time = int(request.form.get("max_time", "120"))  # Zeitlimit in Sekunden, Standard: 120 Sekunden
-        # Setze globale Variablen zurück
+        max_time = int(request.form.get("max_time", "120"))
         processing_done = False
         final_results = None
         while not progress_queue.empty():
             progress_queue.get()
-        # Starte das Agentensystem in einem Hintergrundthread
         thread = threading.Thread(target=background_process, args=(input_text, max_time))
         thread.start()
-        return render_template("index.html", results=None, input_text=input_text)
-    return render_template("index.html", results=None)
+        return render_template("index.html", input_text=input_text)
+    return render_template("index.html", input_text="")
 
-# SSE-Route für den Live-Progress
+# SSE-Route für Live-Progress
 @app.route("/progress")
 def progress():
     def event_stream():
@@ -263,13 +263,16 @@ def progress():
                 continue
     return Response(event_stream(), mimetype="text/event-stream")
 
-# Route, um finale Ergebnisse abzurufen
+# Route, um finale Ergebnisse als HTML abzurufen
 @app.route("/results")
 def results():
     if processing_done and final_results is not None:
-        return jsonify({"results": final_results})
+        html_result = ""
+        for item in final_results:
+            html_result += f"<div class='result'><h3>Frage: {item['question']}</h3><pre>{item['report']}</pre></div>"
+        return html_result
     else:
-        return jsonify({"results": []})
+        return ""
 
 if __name__ == "__main__":
     app.run(debug=True)

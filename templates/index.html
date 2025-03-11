@@ -8,8 +8,27 @@
         .container { max-width: 800px; margin: 0 auto; }
         textarea { width: 100%; height: 150px; }
         input[type="submit"], input[type="number"] { padding: 10px; font-size: 16px; }
-        .result { background-color: #f4f4f4; padding: 10px; margin-top: 20px; border-radius: 5px; }
-        #progress { background-color: #eef; padding: 10px; margin-top: 20px; border: 1px solid #ccd; height: 150px; overflow-y: scroll; }
+        /* Progress-Box: Hier sollen die Log-Nachrichten angezeigt werden */
+        #progress {
+            background-color: #eef;
+            padding: 10px;
+            margin-top: 20px;
+            border: 1px solid #ccd;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            overflow-x: hidden;
+        }
+        /* Ergebnisbox: Text wird umgebrochen; Box wächst nach unten */
+        #results {
+            background-color: #f9f9f9;
+            padding: 10px;
+            margin-top: 20px;
+            border: 1px solid #ccc;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            overflow-x: hidden;
+        }
+        .result { margin-bottom: 20px; }
     </style>
 </head>
 <body>
@@ -28,26 +47,23 @@
         <div id="results"></div>
     </div>
     <script>
-        // EventSource für Live-Progress
+        // EventSource für Live-Progress: Nachrichten werden in die Progress-Box eingefügt.
         const progressDiv = document.getElementById("progress");
         const evtSource = new EventSource("/progress");
         evtSource.onmessage = function(event) {
-            progressDiv.innerHTML += event.data + "<br>";
+            progressDiv.innerHTML += event.data + "\n";
+            // Scrollt nach unten, damit die neuesten Nachrichten sichtbar sind.
             progressDiv.scrollTop = progressDiv.scrollHeight;
         };
 
         // Funktion, um alle 5 Sekunden nach finalen Ergebnissen zu fragen
         function pollResults() {
             fetch("/results")
-                .then(response => response.json())
+                .then(response => response.text())
                 .then(data => {
-                    if (data.results && data.results.length > 0) {
+                    if (data.trim() !== "") {
                         let resultsDiv = document.getElementById("results");
-                        resultsDiv.innerHTML = "";
-                        data.results.forEach(item => {
-                            resultsDiv.innerHTML += `<div class="result"><h3>Frage: ${item.question}</h3><pre>${item.report}</pre></div>`;
-                        });
-                        // Stoppe das Polling, wenn Ergebnisse vorliegen
+                        resultsDiv.innerHTML = data;
                         clearInterval(pollInterval);
                     }
                 })
