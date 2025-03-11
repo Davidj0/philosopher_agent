@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Philosophisches Agentensystem</title>
+    <script>
+        function startAnalysis() {
+            const inputText = document.getElementById("input_text").value;
+            const maxTime = document.getElementById("max_time").value;
+            const eventSource = new EventSource("/stream");
+
+            eventSource.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                const output = document.getElementById("output");
+                output.innerHTML += "<p>" + data.progress + "</p>";
+                if (data.done) eventSource.close();
+            };
+
+            fetch("/stream", {
+                method: "POST",
+                body: new FormData(document.getElementById("analysis_form"))
+            });
+        }
+    </script>
+</head>
+<body>
+    <h1>Philosophisches Agentensystem</h1>
+    <form id="analysis_form" onsubmit="startAnalysis(); return false;">
+        <textarea id="input_text" name="input_text" placeholder="Geben Sie hier Ihren Text ein..."></textarea><br>
+        <input type="number" id="max_time" name="max_time" min="10" value="60"> Sekunden<br>
+        <button type="submit">Start</button>
+    </form>
+    <div id="output"></div>
+</body>
+</html>
