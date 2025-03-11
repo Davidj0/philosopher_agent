@@ -3,33 +3,57 @@
 <head>
     <meta charset="UTF-8">
     <title>Philosophisches Agentensystem</title>
-    <script>
-        function startAnalysis() {
-            const inputText = document.getElementById("input_text").value;
-            const maxTime = document.getElementById("max_time").value;
-            const eventSource = new EventSource("/stream");
-
-            eventSource.onmessage = function(event) {
-                const data = JSON.parse(event.data);
-                const output = document.getElementById("output");
-                output.innerHTML += "<p>" + data.progress + "</p>";
-                if (data.done) eventSource.close();
-            };
-
-            fetch("/stream", {
-                method: "POST",
-                body: new FormData(document.getElementById("analysis_form"))
-            });
-        }
-    </script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        textarea { width: 100%; height: 150px; }
+        input[type="submit"], input[type="number"] { padding: 10px; font-size: 16px; }
+        .result { background-color: #f4f4f4; padding: 10px; margin-top: 20px; border-radius: 5px; }
+        #progress { background-color: #eef; padding: 10px; margin-top: 20px; border: 1px solid #ccd; height: 150px; overflow-y: scroll; }
+    </style>
 </head>
 <body>
-    <h1>Philosophisches Agentensystem</h1>
-    <form id="analysis_form" onsubmit="startAnalysis(); return false;">
-        <textarea id="input_text" name="input_text" placeholder="Geben Sie hier Ihren Text ein..."></textarea><br>
-        <input type="number" id="max_time" name="max_time" min="10" value="60"> Sekunden<br>
-        <button type="submit">Start</button>
-    </form>
-    <div id="output"></div>
+    <div class="container">
+        <h1>Philosophisches Agentensystem</h1>
+        <p>Geben Sie einen Text ein, aus dem offene philosophische Fragestellungen extrahiert werden sollen. Zusätzlich können Sie ein Zeitlimit (in Sekunden) vorgeben. Das System zeigt live den Fortschritt an und erinnert, wenn die Zeit knapp wird.</p>
+        <form method="POST">
+            <textarea name="input_text" placeholder="Geben Sie hier Ihren Text ein..."></textarea><br>
+            <label for="max_time">Zeitlimit (Sekunden): </label>
+            <input type="number" name="max_time" value="120" min="30"><br><br>
+            <input type="submit" value="Agentensystem ausführen">
+        </form>
+        <h2>Live-Progress</h2>
+        <div id="progress"></div>
+        <h2>Ergebnisse</h2>
+        <div id="results"></div>
+    </div>
+    <script>
+        // EventSource für Live-Progress
+        const progressDiv = document.getElementById("progress");
+        const evtSource = new EventSource("/progress");
+        evtSource.onmessage = function(event) {
+            progressDiv.innerHTML += event.data + "<br>";
+            progressDiv.scrollTop = progressDiv.scrollHeight;
+        };
+
+        // Funktion, um alle 5 Sekunden nach finalen Ergebnissen zu fragen
+        function pollResults() {
+            fetch("/results")
+                .then(response => response.json())
+                .then(data => {
+                    if (data.results && data.results.length > 0) {
+                        let resultsDiv = document.getElementById("results");
+                        resultsDiv.innerHTML = "";
+                        data.results.forEach(item => {
+                            resultsDiv.innerHTML += `<div class="result"><h3>Frage: ${item.question}</h3><pre>${item.report}</pre></div>`;
+                        });
+                        // Stoppe das Polling, wenn Ergebnisse vorliegen
+                        clearInterval(pollInterval);
+                    }
+                })
+                .catch(error => console.error("Fehler beim Abrufen der Ergebnisse:", error));
+        }
+        const pollInterval = setInterval(pollResults, 5000);
+    </script>
 </body>
 </html>
